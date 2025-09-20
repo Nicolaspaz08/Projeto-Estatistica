@@ -1,0 +1,16 @@
+
+Dicionário de Variáveis – Base: energia_renovavel.xlsx
+
+Unidade de análise: usina (projeto) de geração de energia renovável. Amostra simulada com 1000 observações.
+
+1) Produção_energia_MWh_ano — Energia elétrica total gerada pelo sistema no último ano (MWh/ano). (Variável resposta)
+2) capacidade_instalada_MW — Capacidade nominal instalada do projeto (MW). Não negativa.
+3) investimento_R$mi — Investimento total aproximado realizado (em milhões de reais, R$ mi).
+4) fator_capacidade_pct — Fator de capacidade técnico (%) que sintetiza disponibilidade de recurso e desempenho do sistema.
+5) disponibilidade_pct — Percentual de tempo em que o sistema ficou disponível/operacional (%) no ano.
+6) irradiancia_kWh_m2_dia — Irradiância média diária do local (kWh/m²/dia). Mais relevante para usinas solares.
+7) vento_m_s — Velocidade média do vento a 100 m (m/s). Mais relevante para usinas eólicas.
+8) distancia_rede_km — Distância até o ponto de conexão à rede elétrica (km). Valores maiores tendem a aumentar perdas/cortes.
+9) idade_projeto_anos — Idade do projeto (anos) desde a entrada em operação comercial.
+10) tecnologia — Tipo tecnológico principal: “Solar”, “Eólica”, “PCH” (Pequenas Centrais Hidrelétricas) ou “Biomassa”.
+11) rastreador_solar — Uso de rastreador (tracker) no arranjo solar: “Sim” ou “Não”. Predominantemente aplicável à tecnologia Solar.
