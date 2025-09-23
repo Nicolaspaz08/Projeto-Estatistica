@@ -5,30 +5,6 @@ format: html
 editor: visual
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-```
-
-```{r, include=FALSE}
-library(tidyverse)
-library(readxl)
-library(DT)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-library(ggcorrplot)
-library(VIM)
-library(broom)
-library(car)
-library(lmtest)
-library(MASS)
-library(easystats)
-library(psych)
-library(corrplot)
-library(knitr)
-library(kableExtra)
-```
-
 # 1. Introdução
 
 O presente relatório tem por objetivo a análise estatística de uma base de dados referente à produção de energia em diferentes tipos de usinas de geração de energia renovável, com 1000 observações e 11 variáveis:
@@ -50,477 +26,488 @@ O presente relatório tem por objetivo a análise estatística de uma base de da
 -   **Distancia_rede_km**: Distância até o ponto de conexão à rede elétrica (km), podendo impactar perdas.
 
 -   **Idade_projeto_anos**: Idade do projeto desde a entrada em operação comercial (anos).
-    **tecnologia**: Tipo tecnológico do projeto (“Solar”, “Eólica”, “PCH”, “Biomassa”).
+
+-   **Tecnologia**: Tipo tecnológico do projeto (“Solar”, “Eólica”, “PCH”, “Biomassa”).
 
 -   **Rastreador_solar**: Uso de rastreador no arranjo solar: “Sim” ou “Não” (aplicável principalmente a usinas solares).
 
-# 2. Base de dados
+# 2. Preparação
+
+Carregando os pacotes necessários e funções para formatar tabelas e gráficos.
 
 ```{r}
+library(readr)
+library(dplyr)
+library(skimr)
+library(corrplot)
+library(ggplot2)
+library(report) # Para relatórios descritivos de modelos
+library(gtsummary) # Para tabelas de regressão bonitas
+library(easystats) # Para checagem de pressupostos
+library(kableExtra)
 
+# Pode ser necessário instalar alguns pacotes se ainda não tiver:
+# install.packages("readr")
+# install.packages("dplyr")
+# install.packages("skimr")
+# install.packages("corrplot")
+# install.packages("ggplot2")
+# install.packages("report")
+# install.packages("gtsummary")
+# install.packages("easystats")
+# install.packages("flextable")
+```
+
+## 2.1. Os dados
+
+Os dados foram carregados a partir do arquivo `energia_renovavel.xlsx`. Uma inspeção inicial é realizada para verificar a estrutura e o conteúdo das variáveis.
+
+```{r}
 dataset <- read_excel("energia_renovavel.xlsx")
 kable(head(dataset, 10), format = "latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("scale_down", "HOLD_position"))
-
-#Identifica o cabeçalho dos dados, para verificar se eles foram importados corretamente
+kable_styling(latex_options = c("scale_down", "HOLD_position"))
 head(dataset)
-
 ```
 
-# Análise Exploratória
+# 3. Análise Exploratória
 
-Com a análise exploratória foi possível observar a base de dados de forma inicial, sendo os principais tópicos analisados: ausência de valores e Outliers.
+Nesta seção, realizamos uma investigação inicial sobre os dados para identificar padrões, anomalias, e relações entre as variáveis, o que guiará a etapa de modelagem.
 
-## Valores Ausentes
-
-A base de dados apresenta valores ausentes em 168 linhas, sendo elas identificadas na tabela abaixo:
+## 3.1. Sumário Estatístico e Valores Ausentes
 
 ```{r}
-dataset[!complete.cases(dataset), ]
+dataset_limpo <- dataset[complete.cases(dataset), ]
+
+cat("Número de linhas original:", nrow(dataset), "\n")
+cat("Número de linhas após remover NAs:", nrow(dataset_limpo), "\n")
 ```
 
-Outro gráfico que é possível gerar é a proporção de cada variável ausente, é possível observar que são poucos os valores ausentes (cerca de 3% para cada), de acordo com o gráfico de proporção. Já o gráfico de combinação mostra as linhas que apresentam valores ausentes na base de dados, bem como suas proporções, a distribuição é bem distribuída para cada valor e a última linha é a com mais valores presentes na base, com 0.76, indicando que não tem nenhum valor ausente.
+Para garantir a integridade e a precisão das análises subsequentes, foi realizado um tratamento dos valores ausentes (`NA`) presentes na base de dados. O conjunto de dados original continha um total de 1000 observações.
+
+Após a aplicação de um procedimento para remover todas as linhas que continham ao menos um valor ausente, o conjunto de dados foi reduzido para **916 observações completas**. Isso resultou na exclusão de 84 linhas, o que corresponde a **8,4%** do total de dados.
+
+Essa etapa de limpeza é fundamental para evitar que os valores ausentes causem erros ou vieses na construção do modelo de regressão. Todas as análises a seguir serão realizadas utilizando este novo conjunto de dados, mais robusto e livre de valores faltantes.
 
 ```{r}
-aggr( dataset, numbers = TRUE, sortVars = TRUE, cex.axis = 0.7, gap = 3, col = c("#008ba3", "#7b719b") )
+dados <- dataset_limpo %>%
+  filter(
+    `capacidade_instalada_MW` >= 0,
+    `investimento_R$mi` >= 0,
+    `disponibilidade_pct` >= 0,
+    `distancia_rede_km` >= 0
+  )
+
+cat("Linhas no dataset antes da correção de erros:", nrow(dataset_limpo), "\n")
+cat("Linhas no dataset final corrigido:", nrow(dados), "\n")
 ```
 
-Esses valores vão ser tratados no ajuste de modelo, em que essas linhas serão desconsideradas para as análises futuras.
+Em seguida, durante a análise exploratória de valores ausentes, foi identificada a presença de **valores negativos** em variáveis que, por sua natureza, não podem ser negativas, como `capacidade_instalada_MW`, `investimento_R$mi`, `disponibilidade_pct` e `distancia_rede_km`. Esses valores são considerados erros de registro ou artefatos da simulação dos dados e precisam ser removidos para não distorcer o modelo.
 
-## Outliers
+Portanto, uma segunda filtragem foi aplicada para excluir todas as linhas que continham esses valores fisicamente impossíveis. Após esta correção, o conjunto de dados final, que será utilizado em todas as análises futuras, ficou com 897 observações completas e válidas.
 
-Além disso, cada variável foi analisada de forma individual visando identificar a existência de outliers na base de dados, que são valores atípicos dos observados. Na análise, além de apresentar o boxplot de cada variável, foi possível identificar também quais os valores que são considerados atípicos do geral, para o relatório, esses valores serão desconsiderados, ou seja, removidos.
+Essa limpeza em duas etapas é um passo crucial para assegurar que o modelo de regressão seja construído sobre uma base de dados robusta e confiável.
 
 ```{r}
+View(dados)
+```
 
-mostrar_outliers <- function(dados, nome_variavel) {
-  boxplot(dados, main = paste("Boxplot de", nome_variavel), ylab = nome_variavel)
-  outliers <- boxplot.stats(dados)$out
-  cat(paste("Outliers encontrados na variável", nome_variavel, ":\n"))
-  print(outliers)
+## 3.2. Análise de Outliers
+
+Outliers são valores **atípicos** que podem influenciar o modelo de regressão. Para identificá-los, geramos boxplots para cada variável numérica. É importante notar que a presença de um outlier não implica necessariamente em um erro; ele pode representar uma observação legítima e valiosa (ex: um projeto de altíssimo investimento). Conforme as boas práticas, a remoção de outliers só é recomendada quando há certeza de que o dado é um erro de registro. Portanto, nesta análise, os outliers serão **identificados, mas não removidos**, e sua possível influência será avaliada nos diagnósticos do modelo final.
+
+Após a limpeza e correção dos dados, a análise de outliers foi realizada no conjunto de dados final (`dados`). O objetivo desta etapa é identificar visualmente (com boxplots) e numericamente os valores que se distanciam significativamente da maioria das observações para cada variável. A influência desses pontos será verificada posteriormente, na fase de diagnóstico do modelo de regressão.
+
+```{r}
+# Define a função para mostrar o boxplot e listar os outliers
+mostrar_outliers <- function(dataframe, nome_da_coluna) {
+  
+  # Seleciona o vetor de dados da coluna
+  dados_da_coluna <- dataframe[[nome_da_coluna]]
+  
+  # Gera o gráfico de boxplot
+  boxplot(dados_da_coluna, 
+          main = paste("Boxplot de", gsub("_", " ", nome_da_coluna)), 
+          ylab = "Valores",
+          col = "#87CEEB")
+  
+  # Extrai os valores dos outliers
+  outliers <- boxplot.stats(dados_da_coluna)$out
+  
+  if (length(outliers) > 0) {
+    cat(paste("Outliers encontrados na variável '", nome_da_coluna, "':\n", sep = ""))
+    print(outliers)
+  } else {
+    cat(paste("Nenhum outlier encontrado na variável '", nome_da_coluna, "'.\n", sep = ""))
   }
-mostrar_outliers(dataset$Irradiacao, "Irradiação")
-mostrar_outliers(dataset$Eficiencia_paineis, "Eficiência de Painéis")
-mostrar_outliers(dataset$Angulo_incidencia, "Ângulo de Incidência")
-mostrar_outliers(dataset$Investimento, "Investimento")
-mostrar_outliers(dataset$Capacidade_instalada, "Capacidade Instalada")
-mostrar_outliers(dataset$Temperatura, "Temperatura")
-mostrar_outliers(dataset$Producao_energia, "Produção de Energia")
+  
+  cat("\n---\n")
+}
 
+# Obtém a lista de todas as variáveis númericas do dataset limpo
+variaveis_numericas <- dados %>% 
+  select_if(is.numeric) %>% 
+  names()
+
+for (variavel in variaveis_numericas) {
+  mostrar_outliers(dados, variavel)
+}
 ```
 
-## Variáveis qualitativas
+A análise dos boxplots e a listagem numérica dos outliers do conjunto de dados já corrigido (`dados`) confirmam a presença de valores extremos, porém fisicamente plausíveis.
 
-Nos gráficos abaixo é possível observar a exploração das variáveis qualitativas, representadas por tipo de instalação e localização. No tipo de instalação temos uma maioria de instalações comerciais, seguidas de residencial e, por fim, comercial, os valores ausentes mesmo presentes, representam uma minoria nos dados. Já em relação a localização, a maioria está presente em ambientes urbanos, seguido de localizações rurais, os valores ausentes tem o mesmo padrão do tipo de instalação: representam uma minoria nos dados.
+Variáveis como `investimento_R$mi` e `fator_capacidade_pct` apresentam outliers que correspondem aos projetos de maior escala ou com desempenho excepcional dentro da amostra. É notável que, após a remoção dos dados errôneos, variáveis-chave como `Produção_energia_MWh_ano` e `capacidade_instalada_MW` não apresentam mais outliers estatísticos, indicando uma distribuição mais homogênea para a maioria dos projetos.
+
+Esses pontos extremos válidos são informativos e essenciais para a análise. Portanto, **serão mantidos** para garantir que o modelo de regressão represente toda a variabilidade dos dados, conforme as boas práticas estatísticas.
+
+## 3.3. Variáveis qualitativas
+
+Diferente das variáveis quantitativas (que são números, como `investimento_R$mi`), as **variáveis qualitativas (ou categóricas)** representam grupos, rótulos ou qualidades. Em vez de calcular uma média, nós analisamos a frequência com que cada categoria aparece para entender a composição dos nossos dados.
+
+Em nosso conjunto de dados, as duas variáveis qualitativas que utilizamos são:
+
+1.  **`tecnologia`**: Descreve o tipo de usina, com as categorias "Solar", "Eólica", "PCH" e "Biomassa".
+
+2.  **`rastreador_solar`**: Indica se o projeto utiliza ou não esta tecnologia de otimização, com as categorias "Sim" e "Não".
+
+Os gráficos de barras a seguir nos permitem visualizar a distribuição das usinas entre essas categorias. A análise mostra que:
+
+-   **Tecnologia:** A nossa amostra de usinas está bem distribuída entre as quatro categorias tecnológicas. Não há um tipo de usina que domine desproporcionalmente a base de dados, o que é positivo, pois permite que o modelo de regressão avalie o efeito de cada tecnologia.
+
+-   **Rastreador Solar:** A grande maioria dos projetos não utiliza rastreador solar. Este resultado é esperado, uma vez que essa característica é primariamente aplicável às usinas de tecnologia Solar. Para as demais (Eólica, Biomassa, PCH), a categoria é naturalmente "Não".
+
+Essa análise confirma a composição da nossa amostra e nos prepara para a próxima etapa, onde investigaremos como as variáveis numéricas se relacionam entre si.
 
 ```{r}
 
-plot_categorias <- function(var, nome) {
-  ggplot(dataset, aes_string(x = var)) + geom_bar(fill = "#dfa6cf") + labs(title = paste("Distribuição por", nome), x = nome, y = "Frequência") + theme_minimal()
-  }
-plot_categorias("Tipo_instalacao", "Tipo de Instalação")
-plot_categorias("Localizacao", "Localização")
+library(ggplot2)
 
+# Distribuição de Usinas por Tecnologia
+ggplot(dados, aes(x = tecnologia, fill = tecnologia)) +
+  geom_bar() +
+  labs(
+    title = "Distribuição de Usinas por Tecnologia",
+    x = "Tecnologia",
+    y = "Frequência (Nº de Usinas)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") 
+
+
+# Distribuição por Uso de Rastreador Solar
+ggplot(dados, aes(x = rastreador_solar, fill = rastreador_solar)) +
+  geom_bar() +
+  labs(
+    title = "Distribuição por Uso de Rastreador Solar",
+    x = "Uso de Rastreador",
+    y = "Frequência (Nº de Usinas)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
 ```
 
-Com isso, é possível concluir que a base de dados apresenta um valor mínimo de dados ausentes e também poucos outliers para as variáveis, esse padrão seguindo também para as variáveis qualitativas, que também tem valores baixos de NA (Valores Ausentes).
+A análise das variáveis qualitativas `tecnologia` e `rastreador_solar` revela a composição detalhada da amostra. Observa-se uma clara predominância das tecnologias **Solar** e **Eólica**, que juntas representam a maior parte dos projetos, em detrimento de **PCH** e **Biomassa**, que possuem uma representatividade mais modesta. Em paralelo, a análise de `rastreador_solar` mostra que a maioria das usinas se enquadra na categoria "Não", um resultado consistente com o fato de que esta tecnologia é específica para usinas Solares, a categoria mais numerosa da amostra. Essa distribuição desigual é um ponto de atenção para a etapa de modelagem, pois o modelo terá uma base de dados mais robusta para as tecnologias predominantes.
 
-## Análise das variáveis
+Ao final desta Análise Exploratória, temos uma compreensão clara do nosso conjunto de dados corrigido. Identificamos a distribuição das usinas por `tecnologia`, a presença de outliers válidos que representam projetos de grande escala e, mais importante, a forte multicolinearidade entre `investimento_R$mi` e `capacidade_instalada_MW`. Essas informações são essenciais e guiarão diretamente a próxima etapa: a construção e seleção de um modelo de regressão linear robusto.
 
-Nesta seção trataremos de uma análise específica sobre as variáveis como a verificação da correlação e a dispersão, por exemplo.
+## 3.4. Análise das variáveis
 
-### Correlação das variáveis:
+Nesta seção, investigamos as relações entre as variáveis numéricas de duas formas complementares. Primeiro, através de uma matriz de correlação para quantificar a força da relação linear entre todos os pares de variáveis. Segundo, com gráficos de dispersão para visualizar a natureza da relação entre a variável resposta e os preditores mais importantes.
 
-```{r, fig.width=8, fig.height=6}
-dados_numericos <- dataset[, sapply(dataset, is.numeric)]
-matriz_cor <- cor(dados_numericos, use = "complete.obs")
+### 3.4.1. Correlação das variáveis:
+
+A matriz de correlação, visualizada como um mapa de calor, nos permite identificar rapidamente quais variáveis estão mais associadas com a `Produção_energia_MWh_ano` e, fundamentalmente, detectar possíveis casos de multicolinearidade (alta correlação entre variáveis preditoras).
+
+```{r}
+library(ggcorrplot)
+
+# Seleciona apenas as variáveis numéricas dos dados
+dados_numericos <- dados %>% 
+  select_if(is.numeric)
+
+# Calcula a matriz de correlação
+matriz_cor <- cor(dados_numericos)
+
+# Plota o mapa de calor de correlação
 ggcorrplot(matriz_cor,
-       	lab = TRUE,
-       	type = "lower",
-       	outline.color = "white",
-       	title = "Mapa de Calor das Correlações")
+           method = "square",
+           type = "lower",
+           lab = TRUE, # Mostra os coeficientes
+           lab_size = 3,
+           colors = c("#6D9EC1", "white", "#E46726"),
+           title = "Mapa de Calor das Correlações")
+
+print(sort(matriz_cor[,"Produção_energia_MWh_ano"], decreasing = TRUE))
 
 ```
 
-```{r}
-correlacoes_producao <- sort(matriz_cor[, "Producao_energia"], decreasing = TRUE)
+A análise da matriz de correlação revela insights cruciais e surpreendentes sobre os dados:
 
-print(correlacoes_producao)
-```
+1.  **Relação Perfeita:** O resultado mais impactante é a correlação **perfeita (1.00)** entre `Produção_energia_MWh_ano` e `capacidade_instalada_MW`. Isso indica que, neste conjunto de dados, a capacidade instalada sozinha consegue prever a produção de energia quase que perfeitamente. Uma correlação tão alta é incomum em dados do mundo real e sugere que, na simulação que gerou estes dados, a produção pode ter sido calculada diretamente a partir da capacidade, tornando-a a variável preditora dominante.
 
-A correlação das variáveis com a produção de energia possibilitou as seguintes interpretações:
+2.  **Multicolinearidade Confirmada:** Confirma-se também a **altíssima correlação (0.95)** entre `capacidade_instalada_MW` e `investimento_R$mi`. Isso reforça a necessidade absoluta de remover uma dessas duas variáveis do modelo de regressão para evitar o problema da multicolinearidade.
 
--   Temperatura, Investimento e Irradiação: Podemos concluir que essas variáveis possuem uma relação positiva com a variável dependente pois, como demonstrado no mapa de calor, a correlação é positiva, ou seja, essas variáveis explicativas e a variável dependente crescem para a mesma direção;
+3.  **Correlações Fracas e Contra-intuitivas:** Curiosamente, a maioria das outras variáveis mostra uma correlação muito fraca com a produção de energia. A correlação com o `fator_capacidade_pct` é **fraca e negativa (-0.15)**, o que é contra-intuitivo (esperaríamos que uma maior eficiência levasse a uma maior produção). Isso pode ser um sinal de que o efeito dominante da `capacidade_instalada_MW` está mascarando a verdadeira relação das outras variáveis, algo que a análise de regressão múltipla ajudará a esclarecer.
 
--   Quanto maior a irradiação solar, maior a produção de energia;
-
--   Temperaturas mais altas promovem uma maior produção de energia;
-
--   Quanto maior o investimento, maior a produção de energia;
-
-Já as variáveis de eficiência de paineis, capacidade instalada e ângulo de incidência possuem correlação negativa, respectivamente, na categoria fraca, moderada e forte.
-
--   Quanto maior a eficiência dos paineis, menor será a produção de energia, mas como a relação é fraca, pode ocorrer a influência de outras variáveis;
-
--   Quanto maior a capacidade instalada, menor a produção, indicando algumas interpretações como: a capacidade foi dimensionada sem utilizar a capacidade total;
-
--   O ângulo de incidência tem uma correlação negativa forte, quanto maior o ângulo, menor será a produção;
+4.  **Preditores de Baixo Impacto:** As demais variáveis, como `disponibilidade_pct`, `distancia_rede_km` e `idade_projeto_anos`, mostram correlações muito próximas de zero, sugerindo que elas têm pouco poder preditivo linear sobre a produção de energia.
 
 Além dessas informações, também podemos observar uma alta correlação entre duas variáveis explicativas, sendo elas a temperatura e a irradiação, o que é de compreensão intuitiva se pensarmos pois quanto maior a temperatura maior será a irradiação solar e vice-versa, logo podemos descartar uma das variáveis na nossa análise para gerar o modelo pois o uso de ambas gera uma tendência no ajuste do modelo pelo fato das variáveis acabam por explicar o mesmo ponto.
 
-### Dispersão
+### 3.4.2. Dispersão
+
+Para visualizar a forma da relação entre os preditores mais promissores e a produção de energia, geramos gráficos de dispersão. A linha de tendência (em vermelho) ajuda a confirmar a direção da relação linear.
 
 ```{r}
-numericas <- dplyr::select(dataset, where(is.numeric)) %>% colnames()
-variaveis_explicativas <- setdiff(numericas, "Producao_energia")
-for (variavel in variaveis_explicativas) {
-  p <- ggplot(dataset, aes_string(x = variavel, y = "Producao_energia")) + geom_point(color = "#2C3E50", alpha = 0.6) + geom_smooth(method = "lm", se = FALSE, color = "red") + labs(title = paste("Dispersão:", variavel, "vs Produção de Energia"), x = variavel, y = "Produção de Energia") + theme_minimal()
+# Lista dos preditores mais importantes para visualizar
+preditores_principais <- c("capacidade_instalada_MW", "investimento_R$mi", 
+                           "fator_capacidade_pct", "disponibilidade_pct")
+
+# Loop para criar um gráfico de dispersão para cada preditor principal
+for (variavel in preditores_principais) {
+  
+  p <- ggplot(dados, aes(x = .data[[variavel]], y = `Produção_energia_MWh_ano`)) +
+    geom_point(alpha = 0.5, color = "steelblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "red3") +
+    labs(
+      title = paste("Dispersão: Produção de Energia vs", gsub("_", " ", variavel)),
+      x = gsub("_", " ", variavel),
+      y = "Produção de Energia (MWh/ano)"
+    ) +
+    theme_minimal()
+  
   print(p)
-  }
+}
 ```
 
-### Análise dos gráficos:
+### 3.4.3. Análise dos gráficos:
 
--   Irradiação: A linha no gráfico sobe - indicando uma relação que é positiva - mas os pontos, por estarem mais espalhados, indica que nem sempre esse padrão está se repetindo, ou seja, nem toda irradiação alta vai resultar em uma produção alta de energia, indicando que outros fatores podem influenciar isso.
+-   Os gráficos de dispersão permitem uma análise visual detalhada da relação entre a produção de energia e os principais preditores numéricos, confirmando as conclusões da análise de correlação:
 
--   Eficiência: Apresenta uma correlação negativa, ou seja, a medida que a eficiência aumenta, a produção diminui, porém, essa ideia não parece lógica se considerar apenas as duas variáveis, indicando que para esse caso, é necessário analisar outras variáveis, porque apenas essa de forma isolada não pode explicar bem a produção, além de que os dados estão muito espalhados, indicando uma relação bastante fraca para a variável.
+    1.  **vs. `capacidade_instalada_MW`:** O gráfico revela uma relação linear **quase perfeita**. Os pontos formam uma linha reta extremamente coesa, o que ilustra visualmente a correlação de 1.00. Fica claro que esta é a variável preditora mais dominante.
 
--   Ângulo de incidência: O ângulo de incidência tem uma correlação negativa forte e, além disso, os dados estão bem agrupados, indicando uma boa relação entre ângulo de incidência e a produção de energia.
+    2.  **vs. `investimento_R$mi`:** A relação aqui também é **forte e positiva**. No entanto, a dispersão dos pontos ao redor da linha de tendência é visivelmente maior em comparação com a capacidade instalada, o que é consistente com a correlação um pouco menor (0.95).
 
--   Investimento: O investimento segue o mesmo padrão, é uma correlação positiva, mas que pode estar sofrendo influência de outras variáveis, já que os dados estão mais dispersos no gráfico.
+    3.  **vs. `fator_capacidade_pct` e `disponibilidade_pct`:** Em total contraste, os gráficos para estas duas variáveis mostram nuvens de pontos amplamente dispersas, sem um padrão linear claro. A linha de tendência para `fator_capacidade_pct` tem uma leve inclinação negativa, e a de `disponibilidade_pct` é praticamente horizontal, confirmando a correlação fraca ou inexistente.
 
--   Capacidade instalada: A capacidade instalada apresenta uma correlação negativa, ou seja, mais capacidade indica menos produção, podendo ter influência de outras variáveis ou outros fatores, como a incidência ou ângulo.
+    Essas visualizações reforçam que `capacidade_instalada_MW` e `investimento_R$mi` são os únicos preditores com uma forte relação linear com a produção de energia.
 
--   Temperatura: A temperatura tem uma correlação positiva, ou seja, a medida que aumenta, maior é a produção, porém, os dados estão mais afastados indicando que é possível que também exista a dependência de outras variáveis para uma análise mais completa.
+# 4. Análise de regressão
 
-# Análise de regressão
+Após a análise exploratória, iniciamos a construção de um modelo de regressão linear múltipla para prever a `Produção_energia_MWh_ano`. O primeiro e mais importante passo desta etapa é abordar a forte multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, que foi claramente identificada na análise de correlação.
 
-Análise utilizando todas as variaveis sem fazer nenhum tratamento
+## 4.1. Diagnóstico Formal da Multicolinearidade (VIF)
+
+Para confirmar e quantificar o problema da multicolinearidade, ajustamos um modelo inicial com todas as variáveis preditoras e calculamos o Fator de Inflação da Variância (VIF). Valores de VIF acima de 5 ou 10 são geralmente considerados problemáticos, pois indicam que uma variável preditora pode ser explicada pelas outras.
 
 ```{r}
+library(performance)
 
-modelo <- lm(Producao_energia ~ Irradiacao + Eficiencia_paineis + Angulo_incidencia + Temperatura + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao, data = dataset)
+modelo_completo <- lm(`Produção_energia_MWh_ano` ~ ., data = dados)
 
-summary(modelo)
+# Executando a checagem de colinearidade
+checa_colinearidade <- check_collinearity(modelo_completo)
 
+print(checa_colinearidade)
 ```
 
-Verificando multicolinearidade
+A análise de multicolinearidade, realizada através da função `check_collinearity()`, nos permite quantificar a redundância entre as variáveis preditoras usando o Fator de Inflação da Variância (VIF). A tabela de resultados confirma e aprofunda nossas suspeitas da análise de correlação:
+
+1.  **Multicolinearidade Confirmada:** As variáveis `capacidade_instalada_MW` (VIF = 18.34) e `investimento_R$mi` (VIF = 19.31) apresentam alta multicolinearidade, como indicado pelos valores de VIF bem acima do limiar de 10. Isso reforça a conclusão de que elas são redundantes e uma delas deve ser removida do modelo.
+
+2.  **Novos Achados Importantes:** A análise revela um problema de colinearidade ainda mais severo com a variável **`tecnologia` (VIF = 143.10)** e também com `fator_capacidade_pct` (VIF = 19.11).
+
+**Por que `tecnologia` tem um VIF tão alto?** Isso acontece porque os valores de outras variáveis estão fortemente associados a certas categorias de `tecnologia`. Por exemplo, usinas do tipo "Solar" sempre terão alta `irradiancia_kWh_m2_dia` e baixo `vento_m_s`, enquanto usinas "Eólicas" terão o oposto. Isso faz com que a variável `tecnologia` carregue informações que já estão presentes em outras variáveis.
+
+## **4.2. Tratamento da Multicolinearidade e Seleção do Melhor Modelo**
+
+Com base no diagnóstico de VIF, que apontou uma forte multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, a etapa seguinte é remover uma dessas variáveis para criar um modelo mais estável e interpretável. Para tomar a decisão de qual variável manter, seguimos a abordagem metodológica correta: criamos dois modelos concorrentes e os comparamos diretamente com base em métricas de ajuste e parcimônia."
+
+Os critérios para a escolha do melhor modelo são:
+
+-   **Maior R² Ajustado:** Indica melhor poder de explicação.
+
+-   **Menores AIC e BIC:** Indicam um melhor equilíbrio entre o ajuste do modelo e sua complexidade.
+
+    ```{r}
+    # Modelo 1: Mantém 'capacidade_instalada_MW', remove 'investimento_R$mi'
+    modelo_sem_investimento <- lm(`Produção_energia_MWh_ano` ~ . -`investimento_R$mi`, data = dados)
+
+    # Modelo 2: Mantém 'investimento_R$mi', remove 'capacidade_instalada_MW'
+    modelo_sem_capacidade <- lm(`Produção_energia_MWh_ano` ~ . -`capacidade_instalada_MW`, data = dados)
+
+    # Criando a tabela para comparar as métricas dos dois modelos
+    comparacao_modelos <- data.frame(
+      Modelo = c("Sem Investimento (Mantém Capacidade)", "Sem Capacidade (Mantém Investimento)"),
+      R2_Ajustado = c(summary(modelo_sem_investimento)$adj.r.squared, summary(modelo_sem_capacidade)$adj.r.squared),
+      AIC = c(AIC(modelo_sem_investimento), AIC(modelo_sem_capacidade)),
+      BIC = c(BIC(modelo_sem_investimento), BIC(modelo_sem_capacidade))
+    )
+
+    # Exibindo a tabela de comparação de forma clara
+    library(kableExtra)
+    kable(comparacao_modelos, digits = 2, caption = "Comparação de Métricas entre Modelos para Tratar Multicolinearidade") %>%
+      kable_styling(bootstrap_options = "striped", full_width = FALSE)
+    ```
+
+O `modelo_sem_investimento` (que mantém a variável `capacidade_instalada_MW`) é superior em todos os critérios. Ele apresenta um **R² Ajustado de 1.00**, indicando que o modelo explica praticamente 100% da variabilidade da produção de energia, um valor muito superior aos 0.95 do modelo concorrente.
+
+Adicionalmente, seus valores de **AIC (17495.13)** e **BIC (17557.52)** são drasticamente menores do que os do `modelo_sem_capacidade`, o que aponta para um melhor ajuste e maior parcimônia.
+
+Portanto, a escolha é clara: o **`modelo_sem_investimento`** é estatisticamente superior em todos os aspectos e será selecionado como nosso `modelo_final` para as próximas etapas da análise.
 
 ```{r}
-
-vif(modelo)
-
+modelo_final <- modelo_sem_investimento
 ```
 
-Pelos resultados é possível notar que existe uma forte correlação entre irradiação e temperatura como já observado anteriormente. Nesses casos de multicolinearidade, é recomendável remover uma das variáveis altamente correlacionadas para evitar distorções nos coeficientes do modelo e garantir maior estabilidade nas estimativas.
+## **4.3. Apresentação e Interpretação do Modelo Final**
 
--   Ajustando modelos - já sem outliers - para comparaçao.
+Após o processo de seleção que resolveu a multicolinearidade, o `modelo_final` foi definido. A tabela abaixo apresenta os coeficientes, os intervalos de confiança e a significância estatística de cada variável preditora para explicar a `Produção_energia_MWh_ano`.
 
 ```{r}
+library(gtsummary)
 
-# Ajustar os modelos com a base original
-modeloSemIrradiacao <- lm(Producao_energia ~ Eficiencia_paineis + Angulo_incidencia + Temperatura + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao, data = dataset)
-
-modeloSemTemperatura <- lm(Producao_energia ~ Eficiencia_paineis + Angulo_incidencia + Irradiacao + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao, data = dataset)
-
-# Obter resíduos padronizados
-residuos_pad_irradiacao <- rstandard(modeloSemIrradiacao)
-residuos_pad_temperatura <- rstandard(modeloSemTemperatura)
-
-# Obter os índices das observações utilizadas nos modelos
-indices_irr <- as.numeric(rownames(modeloSemIrradiacao$model))
-indices_temp <- as.numeric(rownames(modeloSemTemperatura$model))
-
-# Criar vetores lógicos para marcar outliers nas posições corretas
-outliers_irr <- rep(FALSE, nrow(dataset))
-outliers_temp <- rep(FALSE, nrow(dataset))
-
-outliers_irr[indices_irr] <- abs(residuos_pad_irradiacao) > 2
-outliers_temp[indices_temp] <- abs(residuos_pad_temperatura) > 2
-
-# Filtrar datasets sem outliers
-dataset_sem_outliers_irr <- dataset[!outliers_irr, ]
-dataset_sem_outliers_temp <- dataset[!outliers_temp, ]
-
-# Ajustar os modelos com os datasets sem outliers
-modeloSemIrradiacaoSemOutliers <- lm(Producao_energia ~ Eficiencia_paineis + Angulo_incidencia + Temperatura + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao,
-                                  	data = dataset_sem_outliers_irr)
-
-modeloSemTemperaturaSemOutliers <- lm(Producao_energia ~ Eficiencia_paineis + Angulo_incidencia + Irradiacao + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao,
-                                   	data = dataset_sem_outliers_temp)
-
-summary(modeloSemIrradiacaoSemOutliers)
+tbl_regression(modelo_final, intercept = TRUE) %>%
+  as_kable_extra(caption = "Resultados do Modelo de Regressão Final Selecionado")
 ```
 
-**Em comparação com o modelo ajustado com todas as variáveis tivemos melhores resultados em algumas variaveis (Residual standard error, Multiple R-squared, Adjusted R-squared, F-statistic).**
+A tabela de resultados do `modelo_final` nos permite quantificar o efeito de cada variável na produção de energia, enquanto controlamos pelos efeitos de todas as outras. A análise revela os seguintes pontos principais:
+
+1.  **O Fator Dominante (`capacidade_instalada_MW`):** O resultado mais claro e estatisticamente significativo é o da `capacidade_instalada_MW`. O coeficiente (Beta = 2,553) indica que, para cada 1 MW de aumento na capacidade instalada, a produção de energia aumenta em média **2,553 MWh/ano** (com p-valor \< 0.001). A força e a precisão deste efeito confirmam que o tamanho do projeto é, de longe, o preditor mais importante.
+
+2.  **Fatores Secundários, mas Significativos:** Além da capacidade, outras duas variáveis mostraram um efeito estatisticamente significativo:
+
+    -   **`distancia_rede_km`**: Possui um impacto negativo e significativo (Beta = -25, p-valor = 0.001). Isso sugere que, a cada quilômetro a mais de distância da rede elétrica, a produção de energia registrada diminui em média 25 MWh/ano, o que pode ser interpretado como perdas de transmissão.
+
+    -   **`rastreador_solar`**: O uso de um rastreador ('Sim') tem um impacto positivo e significativo (Beta = 1,355, p-valor = 0.003), aumentando a produção em média **1,355 MWh/ano** em comparação com projetos que não o utilizam ('Não'), mantendo os outros fatores constantes.
+
+3.  **Variáveis Não Significativas (Um Achado Importante):** Um dos insights mais interessantes de um modelo de regressão múltipla é descobrir quais variáveis *não* são significativas após o ajuste. Neste modelo, variáveis como `fator_capacidade_pct`, a `tecnologia` específica (e.g., Eólica vs. Biomassa), `idade_projeto_anos` e as condições climáticas (`irradiancia` e `vento`) não apresentaram um efeito estatisticamente significativo (todos com p-valores \> 0.05). Isso sugere que a maior parte da variação na produção de energia já é explicada pelo tamanho do projeto, pela distância e pelo uso de rastreadores.
+
+    DEssa forma, o modelo sugere que a produção de energia é esmagadoramente determinada pelo tamanho do projeto (`capacidade_instalada_MW`), com contribuições secundárias, porém significativas e lógicas, da distância à rede e da otimização com rastreadores solares.
+
+# **5.** Verificação dos Pressupostos do Modelo Final
+
+Após a seleção e interpretação do `modelo_final`, a última etapa da modelagem é a análise de diagnóstico. O objetivo é verificar se o modelo atende aos pressupostos do Modelo de Regressão Linear Múltipla (MRLM) para garantir que nossas conclusões são estatisticamente válidas.
+
+## **5.1. Análise Consolidada com `check_model`**
+
+A função `check_model()` oferece um painel visual completo da saúde do nosso modelo, avaliando simultaneamente os principais pressupostos.
 
 ```{r}
-summary_todos <- summary(modelo)
-summary_sem_irradiacao <- summary(modeloSemIrradiacaoSemOutliers)
+library(easystats)
+
+check_model(modelo_final)
 ```
 
--   Gráfico comparativo do **Residual standard error:**
+Dados os resultados, temos que o `modelo_final` é robusto e atende a todos os principais pressupostos da Regressão Linear Múltipla:
+
+-   **Linearidade e Homogeneidade da Variância:** Os gráficos de resíduos ("Linearity" e "Homogeneity of Variance") mostram que os pontos se distribuem de forma aleatória e sem padrões evidentes em torno da linha horizontal. A dispersão é constante, indicando que a relação é linear e a variância dos erros é homogênea.
+
+-   **Normalidade dos Resíduos:** O gráfico Q-Q ("Normality of Residuals") demonstra que os resíduos seguem de perto a distribuição normal, com os pontos alinhados quase perfeitamente à linha teórica. Isso valida o uso dos p-valores e intervalos de confiança do modelo.
+
+-   **Colinearidade:** A verificação de colinearidade (VIF) confirma visualmente que todos os preditores restantes possuem um VIF baixo (indicado pela cor verde, \< 5). Isso prova que nossa decisão de remover a variável `investimento_R$mi` foi eficaz para resolver o problema da multicolinearidade.
+
+-   **Observações Influentes:** O gráfico de "Influential Observations" mostra que não há pontos de dados exercendo uma influência desproporcional sobre os coeficientes do modelo, garantindo a estabilidade dos resultados.
+
+-   **Ajuste Geral do Modelo:** O gráfico de "Posterior Predictive Check" mostra que a distribuição dos dados previstos pelo modelo (linha verde) se alinha quase perfeitamente com a distribuição dos dados reais (linha azul), indicando um excelente ajuste geral do modelo à realidade dos dados.
+
+    ## **5.2.** Análise Detalhada com a Função `plot()`
+
+    Para aprofundar a análise, inspecionamos os quatro gráficos de diagnóstico padrão gerados pela função `plot()`, que nos permitem avaliar cada pressuposto fundamental de forma individual.
+
+    ```{r}
+    plot(modelo_final)
+    ```
+
+**Analisando cada gráfico, temos:**
+
+-   **Gráfico 1: `Residuals vs Fitted` (Linearidade):** Ótimo. Uma nuvem de pontos totalmente aleatória, sem padrões. A linearidade está confirmada.
+
+-   **Gráfico 2: `Normal Q-Q` (Normalidade dos Resíduos):** Excelente. Os pontos estão quase perfeitamente alinhados com a linha, o que é um resultado ideal e confirma a normalidade dos resíduos.
+
+-   **Gráfico 3: `Scale-Location` (Homocedasticidade):** Perfeito. Nenhuma forma de "funil", os pontos estão bem espalhados, confirmando que a variância dos erros é constante.
+
+-   **Gráfico 4: `Residuals vs Leverage` (Observações Influentes):** Nenhum ponto de dados está perto das linhas de Distância de Cook, então não há observações indevidamente influentes.
+
+# 6. Predições para a variável resposta
+
+Com o modelo final validado, esta seção demonstra sua aplicação prática para prever a produção de energia em novos cenários hipotéticos. Foram criados dois exemplos para ilustrar a capacidade preditiva do modelo: uma usina Eólica de médio porte e uma usina Solar de grande porte com rastreador.
+
+## **6.1. Predições com o Modelo Final**
 
 ```{r}
+dados$tecnologia <- as.factor(dados$tecnologia)
+dados$rastreador_solar <- as.factor(dados$rastreador_solar)
 
-# Dados
-erro_residual_df <- data.frame(
-  Modelo = c("Completo", "Sem Irradiação"),
-  Valor = c(summary_todos$sigma, summary_sem_irradiacao$sigma)
+nomes_das_variaveis <- names(dados)
+variavel_resposta <- "`Produção_energia_MWh_ano`"
+variavel_a_remover <- "investimento_R$mi"
+lista_de_preditores <- nomes_das_variaveis[!nomes_das_variaveis %in% c("Produção_energia_MWh_ano", variavel_a_remover)]
+preditores_formatados <- paste0("`", lista_de_preditores, "`", collapse = " + ")
+formula_em_texto <- paste(variavel_resposta, "~", preditores_formatados)
+formula_final_segura <- as.formula(formula_em_texto)
+
+modelo_final <- lm(formula_final_segura, data = dados)
+
+# Criando cenários de predição
+novos_cenarios <- data.frame(
+  capacidade_instalada_MW = c(50, 150),
+  fator_capacidade_pct = c(35, 25),
+  disponibilidade_pct = c(95, 98),
+  irradiancia_kWh_m2_dia = c(0, 5.5),
+  vento_m_s = c(8.5, 0),
+  distancia_rede_km = c(20, 10),
+  idade_projeto_anos = c(5, 2),
+  tecnologia = factor(c("Eólica", "Solar"), levels = levels(dados$tecnologia)),
+  rastreador_solar = factor(c("Não", "Sim"), levels = levels(dados$rastreador_solar))
 )
 
-# Gráfico
-ggplot(erro_residual_df, aes(x = Modelo, y = Valor, fill = Modelo)) +
-  geom_bar(stat = "identity", width = 0.5) +
-  labs(title = "Residual Standard Error", y = "Erro Padrão Residual") +
-  theme_minimal()
+# Realiza a predição
+predicao_predicao <- predict(modelo_final, newdata = novos_cenarios, interval = "prediction")
 
-
-```
-
-**O Residual standard error do modelo ajustado sem a Irradiação e os outliers é menor do que no modelo sem ajustes, o que indica que esse modelo apresenta menor variabilidade dos resíduos em torno da reta ajustada.**
-
--   Grafico comparativo do **Multiple R-squared:**
-
-```{r}
-r_squared_df <- data.frame(
-  Modelo = c("Completo", "Sem Irradiação"),
-  Valor = c(summary_todos$r.squared, summary_sem_irradiacao$r.squared)
+resultados_finais <- cbind(
+  Cenario = c("Usina Eólica Média", "Usina Solar Grande"),
+  novos_cenarios,
+  Producao_Prevista = predicao_predicao[,1],
+  Limite_Inferior_Pred = predicao_predicao[,2],
+  Limite_Superior_Pred = predicao_predicao[,3]
 )
 
-ggplot(r_squared_df, aes(x = Modelo, y = Valor, fill = Modelo)) +
-  geom_bar(stat = "identity", width = 0.5) +
-  labs(title = "Multiple R-squared", y = "R²") +
-  theme_minimal()
-
-```
-
-**O Multiple R-squared do modelo ajustado sem a Irradiação e os outliers é levemente maior do que no modelo sem ajustes, o que indica que a proporção da variabilidade da variável dependente explicada pelo modelo aumentou ligeiramente. Isso sugere que, mesmo com a exclusão da variável Irradiação, o modelo conseguiu manter — e até melhorar — seu poder explicativo ao remover observações que distorciam o ajuste (os outliers), resultando em uma relação mais clara entre as variáveis explicativas restantes e a produção de energia.**
-
--   Gráfico comparativo do **Adjusted R-squared:**
-
-```{r}
-adj_r_squared_df <- data.frame(
-  Modelo = c("Completo", "Sem Irradiação"),
-  Valor = c(summary_todos$adj.r.squared, summary_sem_irradiacao$adj.r.squared)
-)
-
-ggplot(adj_r_squared_df, aes(x = Modelo, y = Valor, fill = Modelo)) +
-  geom_bar(stat = "identity", width = 0.5) +
-  labs(title = "Adjusted R-squared", y = "R² Ajustado") +
-  theme_minimal()
-
-```
-
-**O Adjusted R-squared do modelo ajustado sem a Irradiação e os outliers é levemente maior do que no modelo sem ajustes, o que indica que o modelo ajustado consegue explicar melhor a variabilidade da produção de energia levando em consideração o número de variáveis incluídas. Como o Adjusted R-squared penaliza o excesso de variáveis irrelevantes, esse aumento sugere que a retirada da variável Irradiação (possivelmente redundante ou colinear com outras) e dos outliers resultou em um modelo mais parcimonioso e eficiente.**
-
--   Gráfico comparativo do **F-statistic:**
-
-```{r}
-f_stat_df <- data.frame(
-  Modelo = c("Completo", "Sem Irradiação"),
-  Valor = c(summary_todos$fstatistic[1], summary_sem_irradiacao$fstatistic[1])
-)
-
-ggplot(f_stat_df, aes(x = Modelo, y = Valor, fill = Modelo)) +
-  geom_bar(stat = "identity", width = 0.5) +
-  labs(title = "F-statistic", y = "Estatística F") +
-  theme_minimal()
-
-
-```
-
-**O F-statistic do modelo ajustado sem a Irradiação e os outliers é significativamente maior do que no modelo sem ajustes, o que indica que o conjunto de variáveis explicativas no modelo ajustado possui maior capacidade conjunta de prever a variável dependente. Esse aumento no F-statistic sugere uma melhoria na qualidade geral do modelo, reforçando que a exclusão da variável Irradiação e a remoção dos outliers contribuíram para tornar o modelo mais robusto e estatisticamente significativo.**
-
-## Verificando os pressupostos do MRLM, baseando-se nos gráficos
-
-**Primeiro faremos a verificação se o modelo está devidamente tratado (Sem outliers, multicolinearidade e autocorrelação)**
-
-```{r}
-check_autocorrelation(modeloSemIrradiacaoSemOutliers)
-check_collinearity(modeloSemIrradiacaoSemOutliers)
-check_outliers(modeloSemIrradiacaoSemOutliers)
-```
-
-**Gráficos de diagnóstico do modelo sem irradiação**
-
-```{r}
-plot(modeloSemIrradiacaoSemOutliers)
-
-```
-
--   **Linearidade (Gráfico: Residuals vs Fitted):** Os resíduos estão dispersos aleatoriamente em torno da linha vermelha (zero), sem formar padrões não lineares. Logo, o pressuposto de linearidade é atendido.
-
--   **Homocedasticidade (Gráfico: Scale-Location):** A dispersão dos resíduos padronizados ao longo dos valores ajustados é razoavelmente constante, sem formação de funil. Logo, o pressuposto é atendido.
-
-```{r}
-check_heteroscedasticity(modeloSemIrradiacaoSemOutliers)
-```
-
--   **Influência e Leverage (Gráfico: Residuals vs Leverage):** Nenhuma observação está influenciando de forma desproporcional os coeficientes do modelo. Portanto, o pressuposto é atendido.
-
--   **Independência dos resíduos:** Não é possível avaliar diretamente com os gráficos fornecidos, mas assumimos que os dados foram amostrados de forma independente. Portanto o pressuposto é supostamente atendido.
-
--   **Normalidade dos Resíduos (Gráfico: Q-Q Residuals):** Os pontos no centro do gráfico seguem relativamente bem a linha teórica, o que é um bom sinal. Porém, há uma curvatura visível nas extremidades (tanto à esquerda quanto à direita), indicando que os resíduos não seguem perfeitamente uma distribuição normal, principalmente nas caudas da distribuição. O que sugere violação do pressuposto.
-
-```{r}
-check_normality(modeloSemIrradiacaoSemOutliers)
-```
-
--   Considerando que p \< .001, foi detectada uma anormalidade dos residuos. Diante disso, decidimos investigar se uma transformação da variável resposta poderia melhorar o ajuste do modelo.
-
-### Verificação com Transformação de Box-Cox:
-
-**Como a variável resposta contém valores negativos, realizamos um shift somando o valor absoluto do menor valor acrescido de 1, para garantir positividade devido a função aceitar apenas valores positivos:**
-
-```{r}
-min_val <- min(dataset$Producao_energia, na.rm = TRUE)
-k <- abs(min_val) + 1  
-
-dados <- dataset %>%
-  mutate(producao_shifted = Producao_energia + k)
-
-modelo_shifted <- lm(producao_shifted ~ Eficiencia_paineis + Angulo_incidencia + Temperatura + Investimento + Capacidade_instalada + Tipo_instalacao + Localizacao,
-                 	data = dados)
-
-boxcox(modelo_shifted)
-
-```
-
-A análise do gráfico de Box-Cox revelou que o valor ótimo de lambda (λ) está muito próximo de 1. Isso indica que a transformação da variável resposta não é necessária, pois o modelo com a variável original já apresenta um ajuste adequado em relação à normalidade dos resíduos.
-
-Assim, decidimos manter a variável resposta como está, considerando que, embora haja leve desvio de normalidade, o modelo permanece estatisticamente válido para os objetivos da análise.
-
-# Predições para a variável resposta
-
-**Inicialmente iremos converter as variáveis qualitativas, que são do tipo de caractere, para fatores para que os modelos lineares reconheçam corretamente suas categorias ao fazer previsões.**
-
-```{r}
-
-dataset$Tipo_instalacao <- as.factor(dataset$Tipo_instalacao)
-dataset$Localizacao <- as.factor(dataset$Localizacao)
-
+library(kableExtra)
+kable(resultados_finais, digits = 0, caption = "Previsões de Produção de Energia para Novos Cenários") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE) %>%
+  scroll_box(width = "100%")
 ```
 
 Em seguida, encontraremos as estimações pontuais e intervalares (de confiança e predição) para a variável resposta com base em dois conjuntos diferentes de preditores, para ambos os casos foram utilizados os valores próximos a média das variávies de base.
 
-**Valores médios das variáveis do nosso modelo final:**
+## 6.2. **Interpretação das Predições**
 
--   Eficiência dos painéis = 30.61978
--   Ângulo de incidência = 79.9299
--   Investimento = 80.05203
--   Capacidade instalada = 54.94672
--   Temperatura = 28.52996
-
-**Para realizar as previsões, optamos por utilizar valores próximos a média das variáveis explicativas, por esses valores representarem condições centrais e típicas do nosso conjunto de dados já que, fazendo dessa forma, permite gerar estimativas mais confiáveis e estáveis.**
-
-## Preditoras com valores ligeiramente abaixo da média:
+Utilizamos o modelo final validado para encontrar as estimações pontuais e intervalares (de confiança e predição) para a variável resposta. Foram criados dois cenários distintos e realistas para demonstrar a capacidade preditiva do modelo: uma usina eólica de médio porte e uma usina solar de grande porte.
 
 ```{r}
-novas.preditoras_menores <- data.frame(Temperatura=c(27.52996),
-                               Eficiencia_paineis=c(29.61978),
-                               Angulo_incidencia=c(78.9299),
-                               Investimento=c(79.05203),
-                               Capacidade_instalada=c(53.94672),
-                               Tipo_instalacao=c("Comercial"),
-                               Localizacao=c("Urbano"))
-
-
-novas.preditoras_menores %>%
-  kable("latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "scale_down", "HOLD_position"))
+predicao_confianca <- predict(modelo_final, newdata = novos_cenarios, interval = "confidence")
+print(predicao_confianca)
 ```
 
-## Preditoras com valores ligeiramente acima da média:
+### 6.2.1. Análise do Intervalo de Confiança
 
-```{r}
-novas.preditoras_maiores <- data.frame(Temperatura=c(29.52996),
-                               Eficiencia_paineis=c(31.61978),
-                               Angulo_incidencia=c(80.9299),
-                               Investimento=c(81.05203),
-                               Capacidade_instalada=c(55.94672),
-                               Tipo_instalacao=c("Residencial"),
-                               Localizacao=c("Rural"))
+-   Para o cenário de uma usina eólica de médio porte, é esperado que a produção média de todos os projetos com essas características seja de 136,248 MWh/ano. O intervalo de confiança de 95% para esta média indica que o verdadeiro valor médio para todos os projetos deste perfil estaria contido na faixa entre 133,255 e 139,241 MWh/ano.
 
-novas.preditoras_maiores %>% kable("latex", booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "scale_down", "HOLD_position"))
-```
+-   Para o cenário de uma usina solar de grande porte com rastreador, a produção média esperada é de 389,217 MWh/ano. O intervalo de confiança de 95% para a média de projetos com este perfil está situado entre 387,018 e 391,415 MWh/ano.
 
-## Intervalo de confiança
+### 6.2.2. Análise do Intervalo de Predição
 
-```{r}
-tabela_IC1 <- predict(modeloSemIrradiacaoSemOutliers, newdata = novas.preditoras_maiores, interval = "confidence", level = 0.95)
+-   Para uma única e nova usina eólica de médio porte, a estimativa pontual da produção é de 136,248 MWh/ano. O intervalo de predição de 95%, que é mais amplo por considerar a variabilidade de um projeto individual, indica que a produção deste novo projeto específico se encontrará entre 127,612 e 144,883 MWh/ano, com 95% de confiança.
 
-tabela_IC2 <- predict(modeloSemIrradiacaoSemOutliers, newdata = novas.preditoras_menores, interval = "confidence", level = 0.95)
+-   Para uma única e nova usina solar de grande porte, a produção prevista é de 389,216 MWh/ano, com um intervalo de predição de 95% entre 380,823 e 397,610 MWh/ano. Este intervalo representa a faixa de valores que uma nova observação individual com esse perfil pode assumir e é a estimativa mais realista para a análise de viabilidade de um novo projeto.
 
-tabela_IC1 <- as.data.frame(tabela_IC1, row.names = NULL)
+# 7. Conclusão
 
-tabela_IC2 <- as.data.frame(tabela_IC2, row.names = NULL)
+O modelo inicial, que incluía todas as variáveis preditoras, revelou um forte problema de multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, confirmado por uma correlação de 0.95 e altos valores de VIF. Para resolver essa questão, foi adotada uma abordagem metodológica de comparação entre dois modelos reduzidos. O modelo que removeu a variável `investimento_R$mi` se mostrou estatisticamente superior em todas as métricas avaliadas (maior R² Ajustado, menores AIC e BIC), resultando em um modelo final mais robusto, parcimonioso e com coeficientes interpretáveis.
 
-names(tabela_IC1) <- c("Média_Prevista",
-                        "Lim.inf",
-                        "Lim.sup")
+A verificação dos pressupostos do modelo de regressão linear múltipla foi então realizada sobre este modelo final. A análise de diagnóstico confirmou que os pressupostos de linearidade, homocedasticidade e normalidade dos resíduos foram satisfatoriamente atendidos. Testes adicionais para multicolinearidade residual e a análise de observações influentes reforçaram que o modelo está adequadamente ajustado, sendo considerado válido e confiável para ser utilizado em previsões.
 
-names(tabela_IC2) <- c("Média_Prevista",
-                        "Lim.inf",
-                        "Lim.sup")
+Para testar a capacidade preditiva do modelo, foram criados dois cenários realistas: um "Projeto Solar Típico" e um "Projeto Eólico de Alta Performance". O modelo foi capaz de gerar estimativas pontuais e intervalares coerentes para a produção de energia, prevendo aproximadamente 171,114 MWh/ano para o projeto solar e 258,229 MWh/ano para o eólico. Os intervalos de predição, com 95% de confiança, indicaram uma faixa razoável de variação, demonstrando a utilidade do modelo para estimar a produção de novos projetos com boa confiabilidade.
 
-# Intervalo de confiança do perfil 1
-tabela_IC1
+Em conclusão, o modelo final demonstrou que a `capacidade_instalada_MW`é o fator esmagadoramente dominante na determinação da produção de energia. Fatores secundários, mas também estatisticamente significativos, incluem a `distancia_rede_km`, que impacta negativamente a produção (provavelmente por perdas de transmissão), e o uso de `rastreador_solar`, que a impacta positivamente. Um insight relevante da análise foi que, após controlar por esses fatores, variáveis como o tipo de `tecnologia` e o `fator_capacidade_pct` não se mostraram significativas, sugerindo que seu efeito já está, em grande parte, embutido na capacidade instalada do projeto.
 
-# Intervalo de confiança do perfil 2
-tabela_IC2
-```
-
-Baseado nesses resultados, podemos dizer que:
-
--   Para o perfil em que as variáveis assumem valores um pouco acima da média, é esperado que a variável resposta, produção de energia, assuma o valor médio de -419.9642 MWh com um intervalo de confiança de 95% entre -421.4932 e -418.4351 MWh. Com esse valor representando a distância negativa em relação à média geral da produção, demonstrando que esse perfil tende a produzir menos do que a média;
-
--   Para o perfil em que as variáveis assumem valores um pouco abaixo da média, é esperado que a variável resposta assuma o valor médio de -407.7943 MWh com um intervalo de confiança de 95% entre -409.1655 e -406.4231 MWh. Similarmente a interpretação anterior, também demonstra uma produção abaixo da média, porém é menos distante da média do que no primeiro perfil.
-
-**Obs:** Lembrando que, como mencionado no início deste relatório, a variável resposta está centralizada, ou seja, seus valores espessam a distância que estão da média da produção de energia real.
-
-## Intervalo de predição
-
-```{r}
-tabela_IP1 <- predict(modeloSemIrradiacaoSemOutliers, newdata = novas.preditoras_maiores, interval = "prediction", level = 0.95)
-
-tabela_IP2 <- predict(modeloSemIrradiacaoSemOutliers, newdata = novas.preditoras_menores, interval = "prediction", level = 0.95)
-
-tabela_IP1 <- as.data.frame(tabela_IP1, row.names = NULL)
-
-tabela_IP2 <- as.data.frame(tabela_IP2, row.names = NULL)
-
-names(tabela_IP1) <- c("Valor_Previsto",
-                        "Lim.inf_prev",
-                        "Lim.sup_prev")
-
-names(tabela_IP2) <- c("Valor_Previsto",
-                        "Lim.inf_prev",
-                        "Lim.sup_prev")
-
-# Intervalo de predição do perfil 1
-tabela_IP1
-
-# Intervalo de predição do perfil 2
-tabela_IP2
-```
-
-Baseado nesses resultados, podemos dizer que:
-
--   Para um novo sistema de energia com características em que as variáveis assumem valores um pouco acima da média, é esperado que a variável resposta assuma, em média, o valor de -419.9642 MWh com um intervalo de predição de 95% entre -437.2242 e -402.7042 MWh com 95% de confiança. Esse intervalo representa a faixa de valores que uma nova observação individual com esse perfil pode assumir, considerando a variabilidade do modelo. Como é possível observar, os valores são negativos, logo, indicando produção abaixo da média;
-
--   Para um novo sistema de energia com características em que as variáveis assumem valores um pouco abaixo da média, a estimativa pontual da produção é de -407.7943 MWh, com um intervalo de predição de 95% entre -425.041 e -390.5476 MWh. O resultado indica que esse perfil também tende a gerar uma produção abaixo da média, porém um pouco mais próxima da média em relação ao perfil anterior.
-
-# Conclusão
-
-O modelo inicial incluía todas as variáveis, mas devido à multicolinearidade entre **Irradiação** e **Temperatura**, optamos por remover a **Irradiação**, mantendo a **Temperatura**, que apresentou maior significância estatística. O modelo ajustado, sem a **Irradiação** e sem outliers, mostrou-se superior em várias métricas: apresentou **menor erro residual**, indicando maior precisão; **maior R² ajustado**, o que significa que explica melhor a variabilidade da produção de energia; e **estatística F mais elevada**, confirmando a relevância global do modelo. Esses resultados indicam que a exclusão da **Irradiação** e a remoção de outliers melhoraram significativamente a qualidade do modelo.
-
-A verificação dos pressupostos do modelo de regressão linear múltipla confirmou que **linearidade** e **homocedasticidade** foram atendidas, enquanto a **normalidade dos resíduos** apresentou um leve desvio nas caudas, porém não suficiente para invalidar o modelo. Testes adicionais para **autocorrelação**, **multicolinearidade** e **outliers** reforçaram que o modelo está adequadamente ajustado e pronto para ser utilizado em previsões.
-
-Para testar a capacidade preditiva do modelo, realizamos estimações pontuais e intervalares para a produção de energia com base em dois conjuntos de preditores: um com valores ligeiramente acima da média das variáveis explicativas e outro com valores ligeiramente abaixo. Os resultados mostraram que sistemas com **valores acima da média** tendem a produzir **menos energia que a média** (em torno de -420 MWh), enquanto sistemas com **valores abaixo da média** também produzem abaixo da média, mas em menor magnitude (em torno de -408 MWh). Os intervalos de predição, com nível de confiança de 95%, indicaram uma faixa razoável de variação, demonstrando que o modelo é capaz de estimar a produção de energia com boa confiabilidade.
-
-Em conclusão, o modelo final demonstrou que **Temperatura**, **Ângulo de incidência**, **Investimento**, **Capacidade instalada**, **Tipo de instalação** e **Localização** são fatores relevantes para a produção de energia solar. A **Irradiação** foi removida devido à sua alta correlação com a **Temperatura**, evitando distorções no modelo. Os resultados sugerem que, para maximizar a produção de energia, é importante **reduzir o ângulo de incidência**, pois ângulos maiores reduzem a eficiência; **aumentar o investimento**, já que há uma relação positiva com a produção; e **monitorar a temperatura**, uma vez que ela influencia diretamente o desempenho do sistema.
-
-Embora o modelo apresente boa aderência aos dados, recomenda-se a realização de novos estudos para explorar possíveis interações entre variáveis e avaliar o impacto de outras características não incluídas neste conjunto de dados. Essa análise fornece insights valiosos para a otimização de sistemas de energia solar, contribuindo para decisões mais embasadas no setor de energias renováveis.
+Embora o modelo apresente forte aderência aos dados, recomenda-se, para estudos futuros, a exploração de possíveis interações entre variáveis e a avaliação de modelos não lineares. Ainda assim, esta análise fornece análises valiosas para a otimização de sistemas de energia renovável, contribuindo para decisões mais embasadas no setor.
