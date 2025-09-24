@@ -41,13 +41,13 @@ library(dplyr)
 library(skimr)
 library(corrplot)
 library(ggplot2)
-library(report) # Para relatórios descritivos de modelos
-library(gtsummary) # Para tabelas de regressão bonitas
-library(easystats) # Para checagem de pressupostos
+library(report)
+library(gtsummary)
+library(easystats) 
 library(kableExtra)
 library(readxl)
 
-# Pode ser necessário instalar alguns pacotes se ainda não tiver:
+# Pode ser necessário instalar alguns pacotes se ainda não tiver na sua sessão:
 # install.packages("readr")
 # install.packages("dplyr")
 # install.packages("skimr")
@@ -61,7 +61,7 @@ library(readxl)
 # install.packages("readxl")
 ```
 
-## 2.1. Os dados
+## 2.1. Os Dados
 
 Os dados foram carregados a partir do arquivo `energia_renovavel.xlsx`. Uma inspeção inicial é realizada para verificar a estrutura e o conteúdo das variáveis.
 
@@ -108,7 +108,7 @@ Em seguida, durante a análise exploratória de valores ausentes, foi identifica
 
 Portanto, uma segunda filtragem foi aplicada para excluir todas as linhas que continham esses valores fisicamente impossíveis. Após esta correção, o conjunto de dados final, que será utilizado em todas as análises futuras, ficou com 897 observações completas e válidas.
 
-Essa limpeza em duas etapas é um passo crucial para assegurar que o modelo de regressão seja construído sobre uma base de dados robusta e confiável.
+Essa limpeza em duas etapas é um passo crucial para assegurar que o modelo de regressão seja construído sobre uma base de dados robusta e confiável. Agora, temos a nossa base de dados limpa e livre de anomalias. Podemos visualizá-la abaixo:
 
 ```{r}
 View(dados)
@@ -118,13 +118,12 @@ View(dados)
 
 Outliers são valores **atípicos** que podem influenciar o modelo de regressão. Para identificá-los, geramos boxplots para cada variável numérica. É importante notar que a presença de um outlier não implica necessariamente em um erro; ele pode representar uma observação legítima e valiosa (ex: um projeto de altíssimo investimento). Conforme as boas práticas, a remoção de outliers só é recomendada quando há certeza de que o dado é um erro de registro. Portanto, nesta análise, os outliers serão **identificados, mas não removidos**, e sua possível influência será avaliada nos diagnósticos do modelo final.
 
-Após a limpeza e correção dos dados, a análise de outliers foi realizada no conjunto de dados final (`dados`). O objetivo desta etapa é identificar visualmente (com boxplots) e numericamente os valores que se distanciam significativamente da maioria das observações para cada variável. A influência desses pontos será verificada posteriormente, na fase de diagnóstico do modelo de regressão.
+O objetivo desta etapa é identificar visualmente (com boxplots) e numericamente os valores que se distanciam significativamente da maioria das observações para cada variável.
 
 ```{r}
 # Define a função para mostrar o boxplot e listar os outliers
 mostrar_outliers <- function(dataframe, nome_da_coluna) {
   
-  # Seleciona o vetor de dados da coluna
   dados_da_coluna <- dataframe[[nome_da_coluna]]
   
   # Gera o gráfico de boxplot
@@ -162,7 +161,7 @@ Variáveis como `investimento_R$mi` e `fator_capacidade_pct` apresentam outliers
 
 Esses pontos extremos válidos são informativos e essenciais para a análise. Portanto, **serão mantidos** para garantir que o modelo de regressão represente toda a variabilidade dos dados, conforme as boas práticas estatísticas.
 
-## 3.3. Variáveis qualitativas
+## 3.3. Variáveis Qualitativas
 
 Diferente das variáveis quantitativas (que são números, como `investimento_R$mi`), as **variáveis qualitativas (ou categóricas)** representam grupos, rótulos ou qualidades. Em vez de calcular uma média, nós analisamos a frequência com que cada categoria aparece para entender a composição dos nossos dados.
 
@@ -212,11 +211,11 @@ A análise das variáveis qualitativas `tecnologia` e `rastreador_solar` revela 
 
 Ao final desta Análise Exploratória, temos uma compreensão clara do nosso conjunto de dados corrigido. Identificamos a distribuição das usinas por `tecnologia`, a presença de outliers válidos que representam projetos de grande escala e, mais importante, a forte multicolinearidade entre `investimento_R$mi` e `capacidade_instalada_MW`. Essas informações são essenciais e guiarão diretamente a próxima etapa: a construção e seleção de um modelo de regressão linear robusto.
 
-## 3.4. Análise das variáveis
+## 3.4. Análise das Variáveis
 
 Nesta seção, investigamos as relações entre as variáveis numéricas de duas formas complementares. Primeiro, através de uma matriz de correlação para quantificar a força da relação linear entre todos os pares de variáveis. Segundo, com gráficos de dispersão para visualizar a natureza da relação entre a variável resposta e os preditores mais importantes.
 
-### 3.4.1. Correlação das variáveis:
+### 3.4.1. Correlação das Variáveis:
 
 A matriz de correlação, visualizada como um mapa de calor, nos permite identificar rapidamente quais variáveis estão mais associadas com a `Produção_energia_MWh_ano` e, fundamentalmente, detectar possíveis casos de multicolinearidade (alta correlação entre variáveis preditoras).
 
@@ -243,7 +242,7 @@ print(sort(matriz_cor[,"Produção_energia_MWh_ano"], decreasing = TRUE))
 
 ```
 
-A análise da matriz de correlação revela insights cruciais e surpreendentes sobre os dados:
+A análise da matriz de correlação revela pontos cruciais e surpreendentes sobre os dados:
 
 1.  **Relação Perfeita:** O resultado mais impactante é a correlação **perfeita (1.00)** entre `Produção_energia_MWh_ano` e `capacidade_instalada_MW`. Isso indica que, neste conjunto de dados, a capacidade instalada sozinha consegue prever a produção de energia quase que perfeitamente. Uma correlação tão alta é incomum em dados do mundo real e sugere que, na simulação que gerou estes dados, a produção pode ter sido calculada diretamente a partir da capacidade, tornando-a a variável preditora dominante.
 
@@ -253,7 +252,7 @@ A análise da matriz de correlação revela insights cruciais e surpreendentes s
 
 4.  **Preditores de Baixo Impacto:** As demais variáveis, como `disponibilidade_pct`, `distancia_rede_km` e `idade_projeto_anos`, mostram correlações muito próximas de zero, sugerindo que elas têm pouco poder preditivo linear sobre a produção de energia.
 
-Além dessas informações, também podemos observar uma correlação moderada (0.46) entre **vento_m_s** e **irradiancia_kWh_m2_dia**, o que é intuitivo, pois regiões com maior incidência solar também podem ter padrões de vento mais consistentes. Além disso, existe uma correlação negativa forte (−0.55) entre **irradiância** e **fator de capacidade**, o que merece investigação, já que, em princípio, esperaríamos uma relação positiva. Para fins de modelagem, é importante considerar que variáveis altamente correlacionadas podem introduzir multicolinearidade, sendo necessário avaliar sua inclusão conjunta no modelo.
+Além dessas informações, também podemos observar uma correlação moderada (0.46) entre vento_m_s e irradiancia_kWh_m2_dia, o que é intuitivo, pois regiões com maior incidência solar também podem ter padrões de vento mais consistentes. Além disso, existe uma correlação negativa forte (−0.55) entre irradiância e fator de capacidade, o que merece investigação, já que, em princípio, esperaríamos uma relação positiva. Para fins de modelagem, é importante considerar que variáveis altamente correlacionadas podem introduzir multicolinearidade, sendo necessário avaliar sua inclusão conjunta no modelo.
 
 ### 3.4.2. Dispersão
 
@@ -281,7 +280,7 @@ for (variavel in preditores_principais) {
 }
 ```
 
-### 3.4.3. Análise dos gráficos:
+### 3.4.3. Análise dos Gráficos:
 
 -   Os gráficos de dispersão permitem uma análise visual detalhada da relação entre a produção de energia e os principais preditores numéricos, confirmando as conclusões da análise de correlação:
 
@@ -293,7 +292,7 @@ for (variavel in preditores_principais) {
 
     Essas visualizações reforçam que `capacidade_instalada_MW` e `investimento_R$mi` são os únicos preditores com uma forte relação linear com a produção de energia.
 
-# 4. Análise de regressão
+# 4. Análise de Regressão
 
 Após a análise exploratória, iniciamos a construção de um modelo de regressão linear múltipla para prever a `Produção_energia_MWh_ano`. O primeiro e mais importante passo desta etapa é abordar a forte multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, que foi claramente identificada na análise de correlação.
 
@@ -306,7 +305,6 @@ library(performance)
 
 modelo_completo <- lm(`Produção_energia_MWh_ano` ~ ., data = dados)
 
-# Executando a checagem de colinearidade
 checa_colinearidade <- check_collinearity(modelo_completo)
 
 print(checa_colinearidade)
@@ -316,11 +314,15 @@ A análise de multicolinearidade, realizada através da função `check_collinea
 
 1.  **Multicolinearidade Confirmada:** As variáveis `capacidade_instalada_MW` (VIF = 18.34) e `investimento_R$mi` (VIF = 19.31) apresentam alta multicolinearidade, como indicado pelos valores de VIF bem acima do limiar de 10. Isso reforça a conclusão de que elas são redundantes e uma delas deve ser removida do modelo.
 
-2.  **Novos Achados Importantes:** A análise revela um problema de colinearidade ainda mais severo com a variável **`tecnologia` (VIF = 143.10)** e também com `fator_capacidade_pct` (VIF = 19.11).
+2.  **Novos Achados Importantes:** A análise revela um problema de colinearidade ainda mais severo com a variável `tecnologia` **(VIF = 143.10)** e também com `fator_capacidade_pct` (VIF = 19.11).
 
-**Por que `tecnologia` tem um VIF tão alto?** Isso acontece porque os valores de outras variáveis estão fortemente associados a certas categorias de `tecnologia`. Por exemplo, usinas do tipo "Solar" sempre terão alta `irradiancia_kWh_m2_dia` e baixo `vento_m_s`, enquanto usinas "Eólicas" terão o oposto. Isso faz com que a variável `tecnologia` carregue informações que já estão presentes em outras variáveis.
+**Por que `tecnologia` tem um VIF tão alto?** É importante notar que a análise de VIF inicial também apontou um valor elevado para a variável `tecnologia`. No entanto, a natureza desta multicolinearidade é fundamentalmente distinta daquela observada entre `capacidade_instalada_MW` e `investimento_R$mi`. Enquanto o par capacidade/investimento apresenta **redundância direta** (ambas medem o mesmo conceito de "escala do projeto"), o VIF elevado de `tecnologia` deriva de uma **associação estrutural**.
+
+Isso significa que suas categorias estão naturalmente correlacionadas com os valores de outros preditores; por exemplo, é esperado que usinas do tipo "Solar" estejam em locais com alta `irradiancia_kWh_m2_dia`, enquanto usinas "Eólicas" estarão em locais com alto `vento_m_s`. Como a variável `tecnologia` é de importância teórica central para o estudo, removê-la nos impediria de analisar o efeito dos diferentes tipos de usina. Portanto, a estratégia metodológica correta é focar na remoção da variável puramente redundante (`investimento_R$mi`). Ao resolver a redundância principal, como será verificado nos diagnósticos do modelo final, os VIFs das demais variáveis se reduzem a níveis perfeitamente aceitáveis.
 
 ## **4.2. Tratamento da Multicolinearidade e Seleção do Melhor Modelo**
+
+### 4.2.1. Comparação por Métricas
 
 Com base no diagnóstico de VIF, que apontou uma forte multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, a etapa seguinte é remover uma dessas variáveis para criar um modelo mais estável e interpretável. Para tomar a decisão de qual variável manter, seguimos a abordagem metodológica correta: criamos dois modelos concorrentes e os comparamos diretamente com base em métricas de ajuste e parcimônia."
 
@@ -355,13 +357,47 @@ O `modelo_sem_investimento` (que mantém a variável `capacidade_instalada_MW`) 
 
 Adicionalmente, seus valores de **AIC (17495.13)** e **BIC (17557.52)** são drasticamente menores do que os do `modelo_sem_capacidade`, o que aponta para um melhor ajuste e maior parcimônia.
 
-Portanto, a escolha é clara: o **`modelo_sem_investimento`** é estatisticamente superior em todos os aspectos e será selecionado como nosso `modelo_final` para as próximas etapas da análise.
+Portanto, a escolha é clara: o `modelo_sem_investimento` é estatisticamente superior em todos os aspectos e será selecionado como nosso `modelo_final` para as próximas etapas da análise.
 
 ```{r}
 modelo_final <- modelo_sem_investimento
 ```
 
-## **4.3. Apresentação e Interpretação do Modelo Final**
+### 4.2.2. Teste de Hipótese para Comparação de Modelos (ANOVA)
+
+Além da comparação por métricas como AIC e BIC, utilizamos um teste de hipóteses formal, a Análise de Variância (ANOVA), para verificar se a inclusão da variável `investimento_R$mi` melhora o modelo de forma estatisticamente significativa em relação ao modelo que já contém `capacidade_instalada_MW`.
+
+Para este teste, temos os seguintes modelos aninhados:
+
+-   **Modelo Simples:** O `modelo_final` (sem `investimento_R$mi`).
+
+-   **Modelo Complexo:** O `modelo_completo` (com todas as variáveis).
+
+As hipóteses testadas são:
+
+-   **H₀ (Hipótese Nula):** O modelo simples é suficiente. A adição de `investimento_R$mi` não melhora significativamente o ajuste do modelo.
+
+-   **H₁ (Hipótese Alternativa):** O modelo complexo é significativamente melhor.
+
+A decisão será baseada no p-valor (`Pr(>F)`): se for maior que 0.05, não rejeitamos a H₀ e ficamos com o modelo mais simples, pelo princípio da parcimônia.
+
+```{r}
+modelo_completo <- lm(`Produção_energia_MWh_ano` ~ ., data = dados)
+modelo_final <- lm(`Produção_energia_MWh_ano` ~ . -`investimento_R$mi`, data = dados)
+
+# Realizando o teste ANOVA para comparar os dois modelos
+teste_anova <- anova(modelo_final, modelo_completo)
+
+print(teste_anova)
+```
+
+Como verificação adicional para a seleção do modelo, foi realizado um teste de Análise de Variância (ANOVA) para comparar formalmente o `modelo_final` (simples) com o `modelo_completo`. O teste resultou em um p-valor estatisticamente significativo (p \< 0.001), o que, isoladamente, sugeriria que o modelo mais complexo possui um ajuste superior.
+
+No entanto, em cenários de multicolinearidade severa como o identificado, este resultado deve ser interpretado com cautela. A significância estatística detectada reflete uma melhoria marginal no ajuste, de pouca relevância prática, causada pela mínima informação adicional que a variável redundante (`investimento_R$mi`) oferece.
+
+Portanto, priorizando a estabilidade dos coeficientes, a interpretabilidade e o princípio da parcimônia (preferir o modelo mais simples e robusto), a decisão baseada na análise de VIF, AIC e BIC foi mantida. O teste ANOVA, neste contexto, reforça a complexidade da relação entre as variáveis, mas não altera a escolha do `modelo_final` como o mais adequado.
+
+## **4.3. Apresentação do Modelo Final**
 
 Após o processo de seleção que resolveu a multicolinearidade, o `modelo_final` foi definido. A tabela abaixo apresenta os coeficientes, os intervalos de confiança e a significância estatística de cada variável preditora para explicar a `Produção_energia_MWh_ano`.
 
@@ -374,17 +410,21 @@ tbl_regression(modelo_final, intercept = TRUE) %>%
 
 A tabela de resultados do `modelo_final` nos permite quantificar o efeito de cada variável na produção de energia, enquanto controlamos pelos efeitos de todas as outras. A análise revela os seguintes pontos principais:
 
-1.  **O Fator Dominante (`capacidade_instalada_MW`):** O resultado mais claro e estatisticamente significativo é o da `capacidade_instalada_MW`. O coeficiente (Beta = 2,553) indica que, para cada 1 MW de aumento na capacidade instalada, a produção de energia aumenta em média **2,553 MWh/ano** (com p-valor \< 0.001). A força e a precisão deste efeito confirmam que o tamanho do projeto é, de longe, o preditor mais importante.
+1.  **O Fator Dominante (`capacidade_instalada_MW`):** O resultado mais claro e estatisticamente significativo é o da `capacidade_instalada_MW`. O coeficiente (Beta = 2,553) indica que, para cada 1 MW de aumento na capacidade instalada, a produção de energia aumenta em média 2,553 MWh/ano (com p-valor \< 0.001). A força e a precisão deste efeito confirmam que o tamanho do projeto é, de longe, o preditor mais importante.
 
 2.  **Fatores Secundários, mas Significativos:** Além da capacidade, outras duas variáveis mostraram um efeito estatisticamente significativo:
 
     -   **`distancia_rede_km`**: Possui um impacto negativo e significativo (Beta = -25, p-valor = 0.001). Isso sugere que, a cada quilômetro a mais de distância da rede elétrica, a produção de energia registrada diminui em média 25 MWh/ano, o que pode ser interpretado como perdas de transmissão.
 
-    -   **`rastreador_solar`**: O uso de um rastreador ('Sim') tem um impacto positivo e significativo (Beta = 1,355, p-valor = 0.003), aumentando a produção em média **1,355 MWh/ano** em comparação com projetos que não o utilizam ('Não'), mantendo os outros fatores constantes.
+    -   **`rastreador_solar`**: O uso de um rastreador ('Sim') tem um impacto positivo e significativo (Beta = 1,355, p-valor = 0.003), aumentando a produção em média 1,355 MWh/ano em comparação com projetos que não o utilizam ('Não'), mantendo os outros fatores constantes.
 
-3.  **Variáveis Não Significativas (Um Achado Importante):** Um dos insights mais interessantes de um modelo de regressão múltipla é descobrir quais variáveis *não* são significativas após o ajuste. Neste modelo, variáveis como `fator_capacidade_pct`, a `tecnologia` específica (e.g., Eólica vs. Biomassa), `idade_projeto_anos` e as condições climáticas (`irradiancia` e `vento`) não apresentaram um efeito estatisticamente significativo (todos com p-valores \> 0.05). Isso sugere que a maior parte da variação na produção de energia já é explicada pelo tamanho do projeto, pela distância e pelo uso de rastreadores.
+3.  **Variáveis Não Significativas (Um Achado Importante):** Um dos pontos mais interessantes de um modelo de regressão múltipla é descobrir quais variáveis *não* são significativas após o ajuste. Neste modelo, variáveis como `fator_capacidade_pct`, a `tecnologia` específica (e.g., Eólica vs. Biomassa), `idade_projeto_anos` e as condições climáticas (`irradiancia` e `vento`) não apresentaram um efeito estatisticamente significativo (todos com p-valores \> 0.05). Isso sugere que a maior parte da variação na produção de energia já é explicada pelo tamanho do projeto, pela distância e pelo uso de rastreadores.
 
     Dessa forma, o modelo sugere que a produção de energia é esmagadoramente determinada pelo tamanho do projeto (`capacidade_instalada_MW`), com contribuições secundárias, porém significativas e lógicas, da distância à rede e da otimização com rastreadores solares.
+
+    ## **4.4. Interpretação do Modelo Final**
+
+    Na seleção entre as variáveis multicolineares `capacidade_instalada_MW` e `investimento_R$mi`, seguiu-se o critério de manter a variável com maior poder preditivo individual. A `capacidade_instalada_MW` apresentou uma correlação de 1.00 com a produção de energia, superior à do `investimento_R$mi` (0.95), sendo, portanto, a variável escolhida para permanecer no modelo. Embora um teste ANOVA tenha indicado que a inclusão de ambas as variáveis fornecia uma melhoria estatisticamente significativa (p \< 0.001), optou-se pelo modelo mais parcimonioso e estável para evitar os problemas de interpretação causados pela multicolinearidade severa, uma decisão reforçada pelos critérios de AIC e BIC.
 
 # **5.** Verificação dos Pressupostos do Modelo Final
 
@@ -412,7 +452,7 @@ Dados os resultados, temos que o `modelo_final` é robusto e atende a todos os p
 
 -   **Ajuste Geral do Modelo:** O gráfico de "Posterior Predictive Check" mostra que a distribuição dos dados previstos pelo modelo (linha verde) se alinha quase perfeitamente com a distribuição dos dados reais (linha azul), indicando um excelente ajuste geral do modelo à realidade dos dados.
 
-    ## **5.2.** Análise Detalhada com a Função `plot()`
+    ## **6.2.** Análise Detalhada com a Função `plot()`
 
     Para aprofundar a análise, inspecionamos os quatro gráficos de diagnóstico padrão gerados pela função `plot()`, que nos permitem avaliar cada pressuposto fundamental de forma individual.
 
@@ -505,7 +545,7 @@ print(predicao_confianca)
 
 # 7. Conclusão
 
-O modelo inicial, que incluía todas as variáveis preditoras, revelou um forte problema de multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, confirmado por uma correlação de 0.95 e altos valores de VIF. Para resolver essa questão, foi adotada uma abordagem metodológica de comparação entre dois modelos reduzidos. O modelo que removeu a variável `investimento_R$mi` se mostrou estatisticamente superior em todas as métricas avaliadas (maior R² Ajustado, menores AIC e BIC), resultando em um modelo final mais robusto, parcimonioso e com coeficientes interpretáveis.
+O modelo inicial, que incluía todas as variáveis preditoras, revelou um forte problema de multicolinearidade entre `capacidade_instalada_MW` e `investimento_R$mi`, confirmado por uma correlação de 0.95 e altos valores de VIF. Para resolver essa questão, a seleção do modelo foi guiada pelo princípio da parcimônia e por múltiplas métricas. A comparação entre dois modelos reduzidos mostrou que o modelo sem `investimento_R$mi` era superior em termos de R² Ajustado, AIC e BIC. Adicionalmente, um teste ANOVA foi realizado, e embora seu p-valor tenha sido estatisticamente significativo, optou-se pelo modelo mais simples. Isso se deve ao fato de que, em cenários de multicolinearidade severa, a significância do ANOVA pode refletir um ganho de informação muito pequeno e de pouca relevância prática, sendo mais prudente priorizar a estabilidade e interpretabilidade dos coeficientes.
 
 A verificação dos pressupostos do modelo de regressão linear múltipla foi então realizada sobre este modelo final. A análise de diagnóstico confirmou que os pressupostos de linearidade, homocedasticidade e normalidade dos resíduos foram satisfatoriamente atendidos. Testes adicionais para multicolinearidade residual e a análise de observações influentes reforçaram que o modelo está adequadamente ajustado, sendo considerado válido e confiável para ser utilizado em previsões.
 
