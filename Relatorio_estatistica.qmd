@@ -45,6 +45,7 @@ library(report) # Para relatórios descritivos de modelos
 library(gtsummary) # Para tabelas de regressão bonitas
 library(easystats) # Para checagem de pressupostos
 library(kableExtra)
+library(readxl)
 
 # Pode ser necessário instalar alguns pacotes se ainda não tiver:
 # install.packages("readr")
@@ -56,6 +57,8 @@ library(kableExtra)
 # install.packages("gtsummary")
 # install.packages("easystats")
 # install.packages("flextable")
+# install.packages("kableExtra")
+# install.packages("readxl")
 ```
 
 ## 2.1. Os dados
@@ -171,7 +174,7 @@ Em nosso conjunto de dados, as duas variáveis qualitativas que utilizamos são:
 
 Os gráficos de barras a seguir nos permitem visualizar a distribuição das usinas entre essas categorias. A análise mostra que:
 
--   **Tecnologia:** A nossa amostra de usinas está bem distribuída entre as quatro categorias tecnológicas. Não há um tipo de usina que domine desproporcionalmente a base de dados, o que é positivo, pois permite que o modelo de regressão avalie o efeito de cada tecnologia.
+-   **Tecnologia:** Observa-se uma predominância das usinas Solar e Eólica, que juntas representam a maior parte da base. Já as tecnologias Biomassa e PCH possuem participação bem menor. Esse desbalanceamento deve ser considerado na modelagem, pois tecnologias com poucas observações (como PCH) podem ter efeito estatístico menos confiável.
 
 -   **Rastreador Solar:** A grande maioria dos projetos não utiliza rastreador solar. Este resultado é esperado, uma vez que essa característica é primariamente aplicável às usinas de tecnologia Solar. Para as demais (Eólica, Biomassa, PCH), a categoria é naturalmente "Não".
 
@@ -250,7 +253,7 @@ A análise da matriz de correlação revela insights cruciais e surpreendentes s
 
 4.  **Preditores de Baixo Impacto:** As demais variáveis, como `disponibilidade_pct`, `distancia_rede_km` e `idade_projeto_anos`, mostram correlações muito próximas de zero, sugerindo que elas têm pouco poder preditivo linear sobre a produção de energia.
 
-Além dessas informações, também podemos observar uma alta correlação entre duas variáveis explicativas, sendo elas a temperatura e a irradiação, o que é de compreensão intuitiva se pensarmos pois quanto maior a temperatura maior será a irradiação solar e vice-versa, logo podemos descartar uma das variáveis na nossa análise para gerar o modelo pois o uso de ambas gera uma tendência no ajuste do modelo pelo fato das variáveis acabam por explicar o mesmo ponto.
+Além dessas informações, também podemos observar uma correlação moderada (0.46) entre **vento_m_s** e **irradiancia_kWh_m2_dia**, o que é intuitivo, pois regiões com maior incidência solar também podem ter padrões de vento mais consistentes. Além disso, existe uma correlação negativa forte (−0.55) entre **irradiância** e **fator de capacidade**, o que merece investigação, já que, em princípio, esperaríamos uma relação positiva. Para fins de modelagem, é importante considerar que variáveis altamente correlacionadas podem introduzir multicolinearidade, sendo necessário avaliar sua inclusão conjunta no modelo.
 
 ### 3.4.2. Dispersão
 
@@ -381,7 +384,7 @@ A tabela de resultados do `modelo_final` nos permite quantificar o efeito de cad
 
 3.  **Variáveis Não Significativas (Um Achado Importante):** Um dos insights mais interessantes de um modelo de regressão múltipla é descobrir quais variáveis *não* são significativas após o ajuste. Neste modelo, variáveis como `fator_capacidade_pct`, a `tecnologia` específica (e.g., Eólica vs. Biomassa), `idade_projeto_anos` e as condições climáticas (`irradiancia` e `vento`) não apresentaram um efeito estatisticamente significativo (todos com p-valores \> 0.05). Isso sugere que a maior parte da variação na produção de energia já é explicada pelo tamanho do projeto, pela distância e pelo uso de rastreadores.
 
-    DEssa forma, o modelo sugere que a produção de energia é esmagadoramente determinada pelo tamanho do projeto (`capacidade_instalada_MW`), com contribuições secundárias, porém significativas e lógicas, da distância à rede e da otimização com rastreadores solares.
+    Dessa forma, o modelo sugere que a produção de energia é esmagadoramente determinada pelo tamanho do projeto (`capacidade_instalada_MW`), com contribuições secundárias, porém significativas e lógicas, da distância à rede e da otimização com rastreadores solares.
 
 # **5.** Verificação dos Pressupostos do Modelo Final
 
@@ -477,7 +480,7 @@ kable(resultados_finais, digits = 0, caption = "Previsões de Produção de Ener
   scroll_box(width = "100%")
 ```
 
-Em seguida, encontraremos as estimações pontuais e intervalares (de confiança e predição) para a variável resposta com base em dois conjuntos diferentes de preditores, para ambos os casos foram utilizados os valores próximos a média das variávies de base.
+Em seguida, encontraremos as estimações pontuais e intervalares (de confiança e de predição) para a variável resposta com base em dois conjuntos diferentes de preditores. Para ambos os casos, foram utilizados valores próximos à média das variáveis de base.
 
 ## 6.2. **Interpretação das Predições**
 
@@ -510,4 +513,4 @@ Para testar a capacidade preditiva do modelo, foram criados dois cenários reali
 
 Em conclusão, o modelo final demonstrou que a `capacidade_instalada_MW`é o fator esmagadoramente dominante na determinação da produção de energia. Fatores secundários, mas também estatisticamente significativos, incluem a `distancia_rede_km`, que impacta negativamente a produção (provavelmente por perdas de transmissão), e o uso de `rastreador_solar`, que a impacta positivamente. Um insight relevante da análise foi que, após controlar por esses fatores, variáveis como o tipo de `tecnologia` e o `fator_capacidade_pct` não se mostraram significativas, sugerindo que seu efeito já está, em grande parte, embutido na capacidade instalada do projeto.
 
-Embora o modelo apresente forte aderência aos dados, recomenda-se, para estudos futuros, a exploração de possíveis interações entre variáveis e a avaliação de modelos não lineares. Ainda assim, esta análise fornece análises valiosas para a otimização de sistemas de energia renovável, contribuindo para decisões mais embasadas no setor.
+Embora o modelo apresente boa aderência aos dados, seria interessante que estudos futuros investigassem possíveis interações entre variáveis e considerassem abordagens não lineares (modelos não lineares). Ainda assim, esta análise fornece análises valiosas para a otimização de sistemas de energia renovável, contribuindo para decisões mais embasadas no setor.
